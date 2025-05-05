@@ -1,14 +1,29 @@
+import json
 from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse
 from .llm import generate_response, DEFAULT_MODEL
-from .sentiment import analyse_sentiment
+from .sentiment import analyse_sentiment, log_sentiment
 from .memory import load_memory, save_memory
-from .persona import get_persona_prompt
-from .memory import summarise_memory, load_memory, save_memory
+from .memory import (
+    summarise_memory, 
+    load_memory, 
+    save_memory, 
+    chunk_memory, 
+    summarise_chunk, 
+    save_summary, 
+    load_summaries, 
+    generate_reflection)
+from .persona import (
+    get_persona_prompt,
+    personas,
+    CURRENT_PERSONA,
+    save_current_persona,
+)
 
 import requests
 import time
+import os
 
 app = FastAPI()
 
@@ -25,27 +40,35 @@ def chat(req: ChatRequest):
     model = req.model or DEFAULT_MODEL
 
     # Check for memory introspection
-    if "what do you remember?" in user_message.lower():
-        summary_text = "\n".join([
-            f"User: {m['user']}\nAI: {m['ai']}"
-            for m in summarise_memory(memory)
-        ])
-        ai_reply = (
-            "Here’s what I recall from our recent conversation:\n\n"
-            f"{summary_text}\n\n"
-            "Let me know if you want to continue where we left off."
-        )
+    if "what do you remember" in user_message.lower():
+        # Dynamic summarisation using the model
+        chunks = chunk_memory(memory, chunk_size=5)
+        summaries = []
+
+        for chunk in chunks:
+            summary = summarise_chunk(chunk, generate_response)
+            save_summary(summary)  # Optional: comment out if you don't want to store
+            summaries.append(f"- {summary.strip()}")
+
+        ai_reply = "Here's what I recall from our recent conversation:\n\n" + "\n".join(summaries)
         
-        # Add to memory even though this wasn't LLM-generated
+        # Optionally log this exchange to memory
         memory.append({"user": user_message, "ai": ai_reply})
         save_memory(MEMORY_PATH, memory)
 
-        # ⚠ Do NOT save this special interaction to memory
+        return {"response": ai_reply}
+    elif user_message.lower() in ["bye", "exit", "/bye", "/exit"]:
+        ai_reply = generate_reflection()
+        memory.append({"user": user_message, "ai": ai_reply})
+        save_memory(MEMORY_PATH, memory)
         return {"response": ai_reply}
 
-    # Normal chat flow
+    # Normal chat flow for sentiment analysis
     sentiment = analyse_sentiment(user_message)
-    persona = get_persona_prompt()
+    log_sentiment(sentiment)
+    
+    # Normal chat flow for response generation
+    persona = get_persona_prompt(CURRENT_PERSONA)
 
     chat_history = "\n".join([
         f"User: {m['user']}\nAI: {m['ai']}"
@@ -124,6 +147,99 @@ def summarise_conversation(model: str | None = None):
     return {
         "summary": summary
     }
+    
+@app.post("/summarise/memory")
+def summarise_full_memory():
+    chunks = chunk_memory(memory, chunk_size=5)
+    results = []
 
+    for chunk in chunks:
+        summary = summarise_chunk(chunk, generate_response)
+        save_summary(summary)
+        results.append(summary)
 
+    return {"summaries": results}
+
+@app.get("/summary")
+def get_summary_log():
+    summaries = load_summaries("data/summary_log.json")
+    return {"summaries": summaries}
+
+@app.delete("/summary")
+def clear_summary_log():
+    path = "data/summary_log.json"
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump([], f, indent=2)
+    return {"message": "Summary log emptied."}
+
+@app.get("/sentiment/trend")
+def get_sentiment_trend():
+    path = "data/sentiment_log.json"
+    if not os.path.exists(path):
+        return {"trend": "No sentiment data yet."}
+    with open(path, "r", encoding="utf-8") as f:
+        sentiments = [entry["sentiment"] for entry in json.load(f)]
+    total = len(sentiments)
+    counts = {s: sentiments.count(s) for s in set(sentiments)}
+    return {
+        "total_messages": total,
+        "distribution": counts
+    }
+    
+@app.delete("/sentiment")
+def clear_sentiment_log():
+    path = "data/sentiment_log.json"
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump([], f, indent=2)
+    return {"message": "Sentiment log emptied."}
+    
+@app.get("/reflect")
+def reflect_on_user():
+    # Load memory summaries
+    summaries = load_summaries("data/summary_log.json")
+    summary_text = "\n".join([f"- {s['summary']}" for s in summaries[-3:]])  # Last 3 summaries
+    
+    # Load sentiment trend
+    path = "data/sentiment_log.json"
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            sentiments = [entry["sentiment"] for entry in json.load(f)]
+    else:
+        sentiments = []
+
+    sentiment_summary = "No sentiment data available."
+    if sentiments:
+        total = len(sentiments)
+        counts = {s: sentiments.count(s) for s in set(sentiments)}
+        top = max(counts, key=counts.get)
+        sentiment_summary = f"You've mostly expressed **{top}** emotions, based on {total} recent messages."
+
+    # Create the reflective prompt for the model
+    prompt = (
+        f"As an AI companion, reflect on the user's recent activity and emotional tone.\n\n"
+        f"Recent summaries:\n{summary_text}\n\n"
+        f"Sentiment trend:\n{sentiment_summary}\n\n"
+        f"Reflect briefly, in 2-3 sentences, offering encouragement or support."
+    )
+
+    reflection = generate_response(prompt)
+    return {
+        "summary_insight": summary_text,
+        "sentiment_insight": sentiment_summary,
+        "reflection": reflection.strip()
+    }
+    
+@app.get("/persona")
+def get_current_persona():
+    return {"current_persona": CURRENT_PERSONA}
+
+@app.post("/persona/{persona_name}")
+def set_persona(persona_name: str):
+    global CURRENT_PERSONA
+    if persona_name in personas:
+        CURRENT_PERSONA = persona_name
+        return {"message": f"Persona switched to '{persona_name}'."}
+    return {"error": "Persona not recognised.", "available": list(personas.keys())}
 

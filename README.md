@@ -42,7 +42,7 @@ curl -fsSL https://ollama.com/install.sh | sh
 ollama serve
 ```
 
-Starts the background API server on http://localhost:11434
+Starts the background API server on <http://localhost:11434>
 
 This is all you need for your Python app to send requests
 
@@ -58,28 +58,6 @@ If you don’t do this, Ollama will automatically pull the model the first time 
 
 ```bash
 ollama run <model>
-```
-
-Opens an interactive chat in the terminal
-
-Useful for manual testing—but not needed when calling from your app
-
-### What Happens When You Call /api/generate
-
-Your Python code (via FastAPI) sends a prompt to:
-
-```bash
-http://localhost:11434/api/generate
-```
-
-With payload:
-
-```json
-{
-  "model": "phi",
-  "prompt": "Hello!",
-  "stream": false
-}
 ```
 
 Ollama will:
@@ -109,69 +87,136 @@ How to Stop the Process:
 taskkill /PID <pid_number> /F
 ```
 
-## Running the Model and Interact via API
+## Modeling Process
 
-### Install Dependencies
+A local, modular AI companion that can:
+
+- Remember your past conversations
+- Reflect on your mood and goals
+- Switch between different personas (e.g. coach, study buddy, therapist)
+- Respond naturally using an LLM served via Ollama
+
+## Features
+
+- FastAPI backend with clean /chat interface
+- LLM integration via Ollama (supports Mistral, Phi, etc.)
+- Memory system that stores conversation context in memory_store.json
+- Summarisation of memory into short bullet logs
+- Sentiment analysis for each user message
+- Runtime persona switching (e.g. "switch to coach")
+- Reflection mode triggered on exit
+- Configurable via config.yaml
+
+## Setup
+
+Step 1 - Start Ollama and Load Model
 
 ```bash
-pip install fastapi uvicorn
+ollama serve
+ollama run mistral  # or phi, etc.
 ```
 
-### Run Your API Server
+Ensure your model name matches the one in app/config.yaml.
+
+Step 2 - Start the API Server
 
 ```bash
 uvicorn app.api:app --reload
 ```
 
-### Run api.py (single request)
+Step 3 - Interact via Terminal (for testing)
 
 ```bash
-python .\app\test_api.py
+python app/test_api.py
 ```
 
-Exit the conversation by entering "exit"!
+Type messages and interact with the model. Type "exit" to end the conversation.
 
-## Stop & Start Services
+## API Overview
 
-- ollama serve running on port 11434
-- uvicorn app.api:app --reload running on port 8000
-- Your model properly loaded via config.yaml
+### Health Check
 
-## Check API Status
+```bash
+GET /status
+```
 
-FastAPI /status endpoint at http://localhost:8000/status acts as a central health check for:
-
-- API backend (FastAPI / Uvicorn)
-- The model server (Ollama)
-- The specific model defined in config.yaml
-
-The status must return:
+### Returns
 
 ```json
-{"model":"minstral","status":"model_error","timestamp":"2025-05-05 11:24:36"}
+{
+  "model": "mistral",
+  "status": "ok",
+  "timestamp": "2025-05-05T11:24:36"
+}
 ```
 
-## Sentiment Module (sentiment.py)
+### Memory
 
-What it does:
+- Stores recent user/AI exchanges in data/memory_store.json
+- Summarised into bullet points via /summarise/memory
+- Queryable with "What do you remember?"
 
-- Analyses the emotional tone of each user message
-- Classifies it as:
-  - 'positive': generally upbeat or affirming
-  - 'neutral': factual or ambiguous
-  - 'negative': frustrated, sad, or critical
+```bash
+DELETE /memory
+```
 
-## Persona Module (persona.py)
+### Sentiment Tracking
 
-What it does:
+- Classifies each user message as positive, neutral, or negative
+- Stored in data/sentiment_log.json
 
-- Provides a system-level instruction that defines the AI’s personality
-  - Kind? Playful? Logical?
-- Currently returns a static string that gets included in the LLM prompt
+```bash
+DELETE /sentiment
+```
 
-## Memory (memory.py)
+### Persona System
 
-What it does:
+- Define AI behaviour (e.g. "supportive", "coach", "study_buddy")
+- Switch at runtime:
 
-- Integrate memory into the model
+```bash
+switch to coach
+```
 
+Or via API:
+
+```bash
+POST /persona/coach
+GET  /persona
+```
+
+### Reflective Exit
+
+Typing "bye" or "exit" triggers a reflection response that:
+
+- Analyses recent summaries and sentiment
+- Provides a gentle closing comment
+- Logs it to memory
+
+### Reset Data
+
+```bash
+curl.exe -X DELETE http://localhost:8000/memory     # clears chat memory
+curl.exe -X DELETE http://localhost:8000/summary    # clears summary log
+curl.exe -X DELETE http://localhost:8000/sentiment  # clears sentiment log
+```
+
+Project Structure
+
+```bash
+app/
+├── api.py            # Main FastAPI server
+├── llm.py            # Interface with Ollama
+├── memory.py         # Chat memory logic + summarisation
+├── sentiment.py      # Sentiment analysis and logging
+├── persona.py        # Persona management + state
+├── test_api.py       # Local testing script
+└── config.yaml       # Model and global settings
+```
+
+### Coming Soon Ideas
+
+- Persistent user profiles
+- Emotion dashboards
+- Custom user-defined personas
+- Long-term memory indexing

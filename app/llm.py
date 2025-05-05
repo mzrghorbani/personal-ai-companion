@@ -16,6 +16,8 @@ def generate_response(prompt: str, model: str = None) -> str:
         f"You are a helpful, supportive AI companion.\n"
         f"User: {prompt}\nAI:"
     )
+    
+    # print(f"[DEBUG] Sending prompt to model '{model}':\n{formatted_prompt[:500]}...\n")
 
     try:
         response = requests.post(OLLAMA_URL, json={
