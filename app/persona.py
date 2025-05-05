@@ -1,9 +1,19 @@
-def respond_with_personality(user_input, memory, sentiment):
-    neutral_response = f"I hear you. Could you tell me more about that?"
+def get_persona_prompt(name: str = "default") -> str:
+    """
+    Returns a base prompt string defining the AI's persona.
+    You can later extend this to load different personas by name.
+    """
+    personas = {
+        "default": (
+            "You are a thoughtful, supportive AI companion. "
+            "You listen carefully, respond kindly, and help the user reflect and grow."
+        ),
+        "tutor": (
+            "You are a patient and clear tutor helping a student understand complex concepts in simple terms."
+        ),
+        "coach": (
+            "You are a motivating coach who helps the user set goals, overcome setbacks, and stay focused."
+        )
+    }
 
-    if sentiment == "positive":
-        return "That's great to hear. What else has been going well?"
-    elif sentiment == "negative":
-        return "I'm really sorry you're feeling this way. I'm here with you."
-    else:
-        return neutral_response
+    return personas.get(name.lower(), personas["default"])

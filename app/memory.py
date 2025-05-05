@@ -13,5 +13,7 @@ def save_memory(path, memory):
         json.dump(memory, f, indent=2)
 
 def summarise_memory(memory):
-    # Very simple summarisation: Keep last 5 exchanges
-    return memory[-5:]
+    # Skip summary-type entries to prevent memory echoing
+    recent = [m for m in memory if m["user"] != "summary"]
+    return recent[-5:]
+
