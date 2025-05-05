@@ -11,6 +11,9 @@ A modular, terminal-based personal AI assistant designed to store memory, respon
 
 ## Getting Started
 
+- Python 3.11.9 (Tested)
+- Dependencies (Tested)
+
 ```bash
 pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
@@ -147,3 +150,28 @@ The status must return:
 ```json
 {"model":"minstral","status":"model_error","timestamp":"2025-05-05 11:24:36"}
 ```
+
+## Sentiment Module (sentiment.py)
+
+What it does:
+
+- Analyses the emotional tone of each user message
+- Classifies it as:
+  - 'positive': generally upbeat or affirming
+  - 'neutral': factual or ambiguous
+  - 'negative': frustrated, sad, or critical
+
+## Persona Module (persona.py)
+
+What it does:
+
+- Provides a system-level instruction that defines the AI’s personality
+  - Kind? Playful? Logical?
+- Currently returns a static string that gets included in the LLM prompt
+
+## Memory (memory.py)
+
+What it does:
+
+- Integrate memory into the model
+
