@@ -1,19 +1,17 @@
-import json
 from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse
 from .llm import generate_response, DEFAULT_MODEL
 from .sentiment import analyse_sentiment, log_sentiment
-from .memory import load_memory, save_memory
-from .memory import (
-    summarise_memory, 
-    load_memory, 
-    save_memory, 
-    chunk_memory, 
-    summarise_chunk, 
-    save_summary, 
-    load_summaries, 
-    generate_reflection)
+from .memory_store import (
+    load_memory, save_memory,
+    summarise_memory, chunk_memory
+)
+from .vector_memory import (
+    summarise_chunk, save_summary,
+    get_relevant_memories, clear_vector_memory,
+    generate_reflection, get_all_summaries, summarise_recent
+)
 from .persona import (
     get_persona_prompt,
     personas,
@@ -21,14 +19,32 @@ from .persona import (
     save_current_persona,
 )
 
+import json
 import requests
 import time
 import os
-
-app = FastAPI()
+import uuid
+from contextlib import asynccontextmanager
 
 MEMORY_PATH = "data/memory_store.json"
-memory = load_memory(MEMORY_PATH)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Load memory on startup
+    global memory
+    memory = load_memory(MEMORY_PATH)
+    global memory_snapshot
+    memory_snapshot = get_all_summaries()[-3:]
+
+    yield
+
+    # Clear memory on shutdown
+    print("Clearing memory...")
+    memory.clear()
+    save_memory(MEMORY_PATH, memory)
+    print("Memory cleared.")
+
+app = FastAPI(lifespan=lifespan)
 
 class ChatRequest(BaseModel):
     message: str
@@ -46,11 +62,12 @@ def chat(req: ChatRequest):
         summaries = []
 
         for chunk in chunks:
+            id_summary = str(uuid.uuid4())
             summary = summarise_chunk(chunk, generate_response)
-            save_summary(summary)  # Optional: comment out if you don't want to store
+            save_summary(summary, id_summary)
             summaries.append(f"- {summary.strip()}")
 
-        ai_reply = "Here's what I recall from our recent conversation:\n\n" + "\n".join(summaries)
+        ai_reply = "Here's what I recall from our recent conversation:\\n\\n" + "\\n".join(summaries)
         
         # Optionally log this exchange to memory
         memory.append({"user": user_message, "ai": ai_reply})
@@ -74,11 +91,23 @@ def chat(req: ChatRequest):
         f"User: {m['user']}\nAI: {m['ai']}"
         for m in summarise_memory(memory)
     ])
+    
+    # Get relevant memories
+    try:
+        relevant_memories = get_relevant_memories(user_message)
+        relevant_memories_text = "\n".join(relevant_memories) if relevant_memories else "No relevant memories found."
+    except Exception as e:
+        relevant_memories_text = "No relevant memories (error accessing vector DB)."
+    
+    # Load a summary snapshot
+    startup_memories = "\n".join([f"- {s}" for s in memory_snapshot])
 
     full_prompt = (
         f"{persona}\n"
         f"(Sentiment: {sentiment})\n"
-        f"{chat_history}\n"
+        f"User Memory Snapshot:\n{startup_memories}\n\n"
+        f"Recent Chat:\n{chat_history}\n"
+        f"Relevant Memories:\n{relevant_memories_text}\n"
         f"User: {user_message}\nAI:"
     )
 
@@ -87,6 +116,13 @@ def chat(req: ChatRequest):
     # Save to memory
     memory.append({"user": user_message, "ai": ai_reply})
     save_memory(MEMORY_PATH, memory)
+
+    # Save summary
+    id_summary = str(uuid.uuid4())
+    save_summary(ai_reply, id_summary)
+
+    # trigger new summary generation
+    summarise_recent(memory)
 
     return {"response": ai_reply}
 
@@ -147,31 +183,6 @@ def summarise_conversation(model: str | None = None):
     return {
         "summary": summary
     }
-    
-@app.post("/summarise/memory")
-def summarise_full_memory():
-    chunks = chunk_memory(memory, chunk_size=5)
-    results = []
-
-    for chunk in chunks:
-        summary = summarise_chunk(chunk, generate_response)
-        save_summary(summary)
-        results.append(summary)
-
-    return {"summaries": results}
-
-@app.get("/summary")
-def get_summary_log():
-    summaries = load_summaries("data/summary_log.json")
-    return {"summaries": summaries}
-
-@app.delete("/summary")
-def clear_summary_log():
-    path = "data/summary_log.json"
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump([], f, indent=2)
-    return {"message": "Summary log emptied."}
 
 @app.get("/sentiment/trend")
 def get_sentiment_trend():
@@ -197,10 +208,6 @@ def clear_sentiment_log():
     
 @app.get("/reflect")
 def reflect_on_user():
-    # Load memory summaries
-    summaries = load_summaries("data/summary_log.json")
-    summary_text = "\n".join([f"- {s['summary']}" for s in summaries[-3:]])  # Last 3 summaries
-    
     # Load sentiment trend
     path = "data/sentiment_log.json"
     if os.path.exists(path):
@@ -215,6 +222,8 @@ def reflect_on_user():
         counts = {s: sentiments.count(s) for s in set(sentiments)}
         top = max(counts, key=counts.get)
         sentiment_summary = f"You've mostly expressed **{top}** emotions, based on {total} recent messages."
+        summaries = get_all_summaries()
+        summary_text = "\n".join([f"- {s}" for s in summaries[-3:]])
 
     # Create the reflective prompt for the model
     prompt = (
@@ -226,7 +235,7 @@ def reflect_on_user():
 
     reflection = generate_response(prompt)
     return {
-        "summary_insight": summary_text,
+        # "summary_insight": summary_text,
         "sentiment_insight": sentiment_summary,
         "reflection": reflection.strip()
     }
@@ -242,4 +251,9 @@ def set_persona(persona_name: str):
         CURRENT_PERSONA = persona_name
         return {"message": f"Persona switched to '{persona_name}'."}
     return {"error": "Persona not recognised.", "available": list(personas.keys())}
+
+@app.delete("/memory/vector")
+def delete_vector_memory():
+    clear_vector_memory()
+    return {"message": "Vector memory cleared."}
 

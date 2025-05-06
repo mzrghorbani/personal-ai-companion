@@ -1,12 +1,57 @@
 [
   {
-    "sentiment": "negative"
+    "sentiment": "neutral"
+  },
+  {
+    "sentiment": "neutral"
   },
   {
     "sentiment": "neutral"
   },
   {
     "sentiment": "neutral"
+  },
+  {
+    "sentiment": "neutral"
+  },
+  {
+    "sentiment": "neutral"
+  },
+  {
+    "sentiment": "neutral"
+  },
+  {
+    "sentiment": "neutral"
+  },
+  {
+    "sentiment": "neutral"
+  },
+  {
+    "sentiment": "neutral"
+  },
+  {
+    "sentiment": "neutral"
+  },
+  {
+    "sentiment": "positive"
+  },
+  {
+    "sentiment": "neutral"
+  },
+  {
+    "sentiment": "neutral"
+  },
+  {
+    "sentiment": "neutral"
+  },
+  {
+    "sentiment": "positive"
+  },
+  {
+    "sentiment": "neutral"
+  },
+  {
+    "sentiment": "positive"
   },
   {
     "sentiment": "neutral"

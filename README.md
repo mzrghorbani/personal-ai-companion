@@ -196,9 +196,9 @@ Typing "bye" or "exit" triggers a reflection response that:
 ### Reset Data
 
 ```bash
-curl.exe -X DELETE http://localhost:8000/memory     # clears chat memory
-curl.exe -X DELETE http://localhost:8000/summary    # clears summary log
-curl.exe -X DELETE http://localhost:8000/sentiment  # clears sentiment log
+curl.exe -X DELETE http://localhost:8000/memory          # clears chat memory
+curl.exe -X DELETE http://localhost:8000/sentiment       # clears sentiment log
+curl.exe -X DELETE http://localhost:8000/memory/vector   # clears chromadb entries 
 ```
 
 Project Structure
@@ -208,6 +208,8 @@ app/
 ├── api.py            # Main FastAPI server
 ├── llm.py            # Interface with Ollama
 ├── memory.py         # Chat memory logic + summarisation
+├── memory_store.py   # Store memory logic
+├── vector_memory.py  # Database memory logic
 ├── sentiment.py      # Sentiment analysis and logging
 ├── persona.py        # Persona management + state
 ├── test_api.py       # Local testing script
